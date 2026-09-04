@@ -7,7 +7,7 @@ namespace DriveOp.Api.Entities
     {
         public string Description { get; set; } = null!;
         public IncidentType IncidentType { get; set; }
-        public IncidentStatus Status { get; set; }
+        public IncidentStatus Status { get; set; } = IncidentStatus.Reported;
         public DateTime DateReported { get; set; }
 
         public Guid VehicleId { get; set; }

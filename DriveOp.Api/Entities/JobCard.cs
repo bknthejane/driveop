@@ -6,8 +6,8 @@ namespace DriveOp.Api.Entities
     public class JobCard : BaseEntity
     {
         public string JobCardNumber { get; set; } = null!;
-        public JobCardStatus Status { get; set; }
-        public Priority Priority { get; set; }
+        public JobCardStatus Status { get; set; } = JobCardStatus.Open;
+        public Priority Priority { get; set; } = Priority.Low;
         public string? Notes { get; set; }
         public DateTime DateOpened { get; set; }
         public DateTime? DateCompleted { get; set; }

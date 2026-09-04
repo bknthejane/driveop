@@ -4,9 +4,9 @@ namespace DriveOp.Api.Entities
 {
     public class Municipality : BaseEntity
     {
-        public string Name { get; set; }
-        public string Code { get; set; }
-        public string Province { get; set; }
+        public string Name { get; set; } = null!;
+        public string Code { get; set; } = null!;
+        public string? Province { get; set; }
 
         public ICollection<Vehicle> Vehicles { get; set; } = new List<Vehicle>();
         public ICollection<Driver> Drivers { get; set; } = new List<Driver>();
