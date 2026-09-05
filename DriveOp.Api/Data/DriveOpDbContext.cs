@@ -10,16 +10,16 @@ namespace DriveOp.Api.Data
 
         }
 
-        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             ApplyAuditRules();
-            return base.SaveChangesAsync(cancellationToken);
+            return base.SaveChanges(acceptAllChangesOnSuccess);
         }
 
-        public override int SaveChanges()
+        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
             ApplyAuditRules();
-            return base.SaveChanges();
+            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         private void ApplyAuditRules()
@@ -45,11 +45,12 @@ namespace DriveOp.Api.Data
                 if (entry.State != EntityState.Deleted)
                     continue;
 
-                entry.State = EntityState.Modified;
+                entry.State = EntityState.Unchanged;
                 entry.Entity.IsDeleted = true;
                 entry.Entity.DeletedAt = now;
+                entry.Property(nameof(ISoftDeletable.IsDeleted)).IsModified = true;
+                entry.Property(nameof(ISoftDeletable.DeletedAt)).IsModified = true;
             }
-
         }
     }
 }
