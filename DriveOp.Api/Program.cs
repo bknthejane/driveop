@@ -1,9 +1,11 @@
 using DriveOp.Api.Data;
+using DriveOp.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -22,6 +24,8 @@ builder.Services.AddCors(options =>
             .AllowAnyHeader()
             .AllowAnyMethod());
 });
+
+builder.Services.AddScoped<IVehicleService, VehicleService>();
 
 var app = builder.Build();
 
