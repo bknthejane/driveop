@@ -1,5 +1,6 @@
 ﻿using DriveOp.Api.Common;
 using DriveOp.Api.Data;
+using DriveOp.Api.DTOs.Common;
 using DriveOp.Api.DTOs.Vehicles;
 using DriveOp.Api.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -15,11 +16,33 @@ namespace DriveOp.Api.Services
             _context = context;
         }
 
-        public async Task<IReadOnlyList<VehicleListDto>> GetAllAsync(CancellationToken cancellationToken)
+        public async Task<PagedResult<VehicleListDto>> GetAllAsync(VehicleQueryParameters parameters, CancellationToken cancellationToken)
         {
-            return await _context.Vehicles
-                .AsNoTracking()
+            var query = _context.Vehicles.AsNoTracking();
+
+            if (!string.IsNullOrWhiteSpace(parameters.Search))
+            {
+                var search = parameters.Search.Trim();
+                query = query.Where(v =>
+                    EF.Functions.Like(v.FleetNumber, $"%{search}%") ||
+                    EF.Functions.Like(v.RegistrationNumber, $"%{search}%") ||
+                    EF.Functions.Like(v.Make, $"%{search}%") ||
+                    EF.Functions.Like(v.Model, $"%{search}%"));
+            }
+
+            if (parameters.Status.HasValue)
+                query = query.Where(v => v.Status == parameters.Status.Value);
+
+            if (parameters.MunicipalityId.HasValue)
+                query = query.Where(v => v.MunicipalityId == parameters.MunicipalityId.Value);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var items = await query
                 .OrderBy(v => v.FleetNumber)
+                .ThenBy(v => v.Id)
+                .Skip((parameters.Page - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
                 .Select(v => new VehicleListDto
                 {
                     Id = v.Id,
@@ -27,13 +50,20 @@ namespace DriveOp.Api.Services
                     RegistrationNumber = v.RegistrationNumber,
                     Make = v.Make,
                     Model = v.Model,
-                    LicenseExpiry = v.LicenseExpiry,
                     Status = v.Status,
                     AssignedDriverName = v.AssignedDriver == null
                         ? null
                         : v.AssignedDriver.Name + " " + v.AssignedDriver.Surname
                 })
                 .ToListAsync(cancellationToken);
+
+            return new PagedResult<VehicleListDto>
+            {
+                Items = items,
+                Page = parameters.Page,
+                PageSize = parameters.PageSize,
+                TotalCount = totalCount
+            };
         }
 
         public async Task<ServiceResult<VehicleDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken)

@@ -1,4 +1,5 @@
 ﻿using DriveOp.Api.Common;
+using DriveOp.Api.DTOs.Common;
 using DriveOp.Api.DTOs.Vehicles;
 using DriveOp.Api.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -17,10 +18,10 @@ namespace DriveOp.Api.Controllers
         }
 
         [HttpGet]
-        [ProducesResponseType(typeof(IReadOnlyList<VehicleListDto>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
+        [ProducesResponseType(typeof(PagedResult<VehicleListDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAll([FromQuery] VehicleQueryParameters parameters, CancellationToken cancellationToken)
         {
-            var vehicles = await _vehicleService.GetAllAsync(cancellationToken);
+            var vehicles = await _vehicleService.GetAllAsync(parameters, cancellationToken);
             return Ok(vehicles);
         }
 
