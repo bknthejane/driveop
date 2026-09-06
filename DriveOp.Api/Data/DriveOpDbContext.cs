@@ -1,4 +1,5 @@
-﻿using DriveOp.Api.Entities.Common;
+﻿using DriveOp.Api.Entities;
+using DriveOp.Api.Entities.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace DriveOp.Api.Data
@@ -8,6 +9,20 @@ namespace DriveOp.Api.Data
         public DriveOpDbContext(DbContextOptions<DriveOpDbContext> options) : base(options)
         {
 
+        }
+
+        public DbSet<Municipality> Municipalities => Set<Municipality>();
+        public DbSet<Vehicle> Vehicles => Set<Vehicle>();
+        public DbSet<Driver> Drivers => Set<Driver>();
+        public DbSet<Supervisor> Supervisors => Set<Supervisor>();
+        public DbSet<Mechanic> Mechanics => Set<Mechanic>();
+        public DbSet<Incident> Incidents => Set<Incident>();
+        public DbSet<JobCard> JobCards => Set<JobCard>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.ApplyConfigurationsFromAssembly(typeof(DriveOpDbContext).Assembly);
         }
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
