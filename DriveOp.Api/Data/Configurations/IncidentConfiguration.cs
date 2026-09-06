@@ -10,7 +10,7 @@ namespace DriveOp.Api.Data.Configurations
         {
             builder.HasKey(i => i.Id);
 
-            builder.Property(i => i.Description).IsRequired().HasMaxLength(5000);
+            builder.Property(i => i.Description).IsRequired().HasMaxLength(4000);
 
             builder.HasOne(i => i.Vehicle)
                 .WithMany(v => v.Incidents)

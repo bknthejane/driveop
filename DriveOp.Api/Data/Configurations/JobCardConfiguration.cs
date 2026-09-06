@@ -11,7 +11,7 @@ namespace DriveOp.Api.Data.Configurations
             builder.HasKey(j => j.Id);
 
             builder.Property(j => j.JobCardNumber).IsRequired().HasMaxLength(50);
-            builder.Property(j => j.Notes).HasMaxLength(5000);
+            builder.Property(j => j.Notes).HasMaxLength(4000);
 
             builder.HasIndex(j => j.JobCardNumber).IsUnique();
 
