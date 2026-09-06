@@ -27,6 +27,7 @@ namespace DriveOp.Api.Services
                     RegistrationNumber = v.RegistrationNumber,
                     Make = v.Make,
                     Model = v.Model,
+                    LicenseExpiry = v.LicenseExpiry,
                     Status = v.Status,
                     AssignedDriverName = v.AssignedDriver == null
                         ? null
@@ -51,6 +52,9 @@ namespace DriveOp.Api.Services
 
         public async Task<ServiceResult<VehicleDto>> CreateAsync(CreateVehicleDto dto, CancellationToken cancellationToken)
         {
+            if (dto.LicenseExpiry is null || dto.LicenseExpiry == DateOnly.MinValue)
+                return ServiceResult<VehicleDto>.Validation("A valid license expiry date is required.");
+
             var fleetNumberTaken = await _context.Vehicles
                 .AnyAsync(v => v.FleetNumber == dto.FleetNumber, cancellationToken);
 
@@ -81,14 +85,22 @@ namespace DriveOp.Api.Services
                 RegistrationNumber = dto.RegistrationNumber,
                 Make = dto.Make,
                 Model = dto.Model,
-                LicenseExpiry = dto.LicenseExpiry,
+                LicenseExpiry = dto.LicenseExpiry.Value,
                 Status = dto.Status,
                 MunicipalityId = dto.MunicipalityId,
                 AssignedDriverId = dto.AssignedDriverId
             };
 
             _context.Vehicles.Add(vehicle);
-            await _context.SaveChangesAsync(cancellationToken);
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                return ServiceResult<VehicleDto>.Conflict($"Fleet number '{dto.FleetNumber}' is already in use.");
+            }
 
             return await GetByIdAsync(vehicle.Id, cancellationToken);
         }

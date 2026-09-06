@@ -18,7 +18,7 @@ namespace DriveOp.Api.DTOs.Vehicles
         public string Model { get; set; } = null!;
 
         [Required]
-        public DateOnly LicenseExpiry {  get; set; }
+        public DateOnly? LicenseExpiry {  get; set; }
 
         [Required]
         public VehicleStatus Status { get; set; }
