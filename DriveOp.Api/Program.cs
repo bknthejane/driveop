@@ -13,7 +13,8 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<DriveOpDbContext>(options =>
     options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+        builder.Configuration.GetConnectionString("DefaultConnection"))
+            .LogTo(Console.WriteLine, LogLevel.Information));
 
 const string DevCorsPolicy = "DevCors";
 
