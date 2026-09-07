@@ -263,6 +263,18 @@ $crossDriver = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
 }
 Assert-Status "driver from another municipality rejected" 400 $crossDriver.Status $crossDriver.Body
 
+# Enum backed by int: 999 is not a defined VehicleStatus.
+$badStatus = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
+    fleetNumber        = "0003"
+    registrationNumber = "$codeA 005-GP"
+    make               = "Toyota"
+    model              = "Quantum"
+    licenseExpiry      = $nextYear
+    status             = 999
+    municipalityId     = $municipalityA
+}
+Assert-Status "undefined vehicle status rejected" 400 $badStatus.Status $badStatus.Body
+
 $updated = Invoke-Api -Method PUT -Path "/api/vehicles/$vehicleAId" -Body @{
     registrationNumber = "$codeA 001-GP"
     make               = "Toyota"
@@ -332,6 +344,15 @@ $emptyDescription = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
 }
 Assert-Status "empty description rejected by annotations" 400 $emptyDescription.Status $emptyDescription.Body
 
+# [Required] on a non-nullable enum only checks for absence, not validity.
+$badEnum = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
+    description  = "Undefined incident type."
+    incidentType = 999
+    vehicleId    = $vehicleAId
+    driverId     = $driverAId
+}
+Assert-Status "undefined incident type rejected" 400 $badEnum.Status $badEnum.Body
+
 $incidentFilter = "/api/incidents?vehicleId=" + $vehicleAId + "&pageSize=5"
 $filtered = Invoke-Api -Method GET -Path $incidentFilter
 Assert-Status "filter incidents by vehicle" 200 $filtered.Status $filtered.Body
@@ -351,6 +372,13 @@ $capped = Invoke-Api -Method GET -Path "/api/vehicles?pageSize=99999"
 Assert-True "pageSize capped at $($capped.Body.pageSize)" `
     ($capped.Body.pageSize -le 100) `
     "pageSize was $($capped.Body.pageSize)"
+
+# (Page - 1) * PageSize would overflow int and produce a negative OFFSET.
+$hugePage = Invoke-Api -Method GET -Path "/api/vehicles?page=21474838&pageSize=100"
+Assert-Status "huge page number does not overflow" 200 $hugePage.Status $hugePage.Body
+
+$negativePage = Invoke-Api -Method GET -Path "/api/vehicles?page=-5&pageSize=10"
+Assert-Status "negative page clamped" 200 $negativePage.Status $negativePage.Body
 
 # ---------------------------------------------------------------- soft delete
 

@@ -37,7 +37,7 @@ namespace DriveOp.Api.Services.Drivers
             var items = await query
                 .OrderBy(d => d.Name)
                 .ThenBy(d => d.Id)
-                .Skip((parameters.Page - 1) * parameters.PageSize)
+                .Skip(parameters.Skip)
                 .Take(parameters.PageSize)
                 .Select(d => new DriverListDto
                 {

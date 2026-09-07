@@ -41,7 +41,7 @@ namespace DriveOp.Api.Services.Incidents
             var items = await query
                 .OrderByDescending(i => i.DateReported)
                 .ThenBy(i => i.Id)
-                .Skip((parameters.Page - 1) * parameters.PageSize)
+                .Skip(parameters.Skip)
                 .Take(parameters.PageSize)
                 .Select(i => new IncidentListDto
                 {
@@ -96,6 +96,10 @@ namespace DriveOp.Api.Services.Incidents
 
         public async Task<ServiceResult<IncidentDto>> CreateAsync(CreateIncidentDto dto, CancellationToken cancellationToken)
         {
+            if (!Enum.IsDefined(dto.IncidentType))
+                return ServiceResult<IncidentDto>.Validation(
+                    $"'{(int)dto.IncidentType}' is not a valid incident type.");
+
             var vehicle = await _context.Vehicles
                  .AsNoTracking()
                  .Where(v => v.Id == dto.VehicleId)

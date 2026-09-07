@@ -41,7 +41,7 @@ namespace DriveOp.Api.Services.Vehicles
             var items = await query
                 .OrderBy(v => v.FleetNumber)
                 .ThenBy(v => v.Id)
-                .Skip((parameters.Page - 1) * parameters.PageSize)
+                .Skip(parameters.Skip)
                 .Take(parameters.PageSize)
                 .Select(v => new VehicleListDto
                 {
@@ -82,6 +82,10 @@ namespace DriveOp.Api.Services.Vehicles
 
         public async Task<ServiceResult<VehicleDto>> CreateAsync(CreateVehicleDto dto, CancellationToken cancellationToken)
         {
+            if (!Enum.IsDefined(dto.Status))
+                return ServiceResult<VehicleDto>.Validation(
+                    $"'{(int)dto.Status}' is not a valid vehicle status.");
+
             if (dto.LicenseExpiry is null || dto.LicenseExpiry == DateOnly.MinValue)
                 return ServiceResult<VehicleDto>.Validation("A valid license expiry date is required.");
 
