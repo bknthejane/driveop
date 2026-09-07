@@ -116,11 +116,24 @@ namespace DriveOp.Api.Services.Drivers
             if (driver is null)
                 return ServiceResult<DriverDto>.NotFound($"Driver {id} was not found.");
 
+            var licenseNumberTaken = await _context.Drivers
+                .AnyAsync(d => d.Id != id && d.LicenseNumber == dto.LicenseNumber, cancellationToken);
+
+            if (licenseNumberTaken)
+                return ServiceResult<DriverDto>.Conflict($"License Number '{dto.LicenseNumber}' already exists.");
+
             driver.Name = dto.Name;
             driver.Surname = dto.Surname;
             driver.LicenseNumber = dto.LicenseNumber;
 
-            await _context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                return ServiceResult<DriverDto>.Conflict($"License Number '{dto.LicenseNumber}' already exists.");
+            }
 
             return await GetByIdAsync(id, cancellationToken);
         }

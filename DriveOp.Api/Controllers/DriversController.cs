@@ -68,7 +68,7 @@ namespace DriveOp.Api.Controllers
         public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
         {
             var result = await _driverService.DeleteAsync(id, cancellationToken);
-            return result.Succeeded ? Ok(result) : ToErrorResponse(result);
+            return result.Succeeded ? NoContent() : ToErrorResponse(result);
         }
 
         private IActionResult ToErrorResponse<T>(ServiceResult<T> result) =>
