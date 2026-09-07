@@ -1,5 +1,6 @@
 using DriveOp.Api.Data;
-using DriveOp.Api.Services;
+using DriveOp.Api.Services.Drivers;
+using DriveOp.Api.Services.Vehicles;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +28,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<IVehicleService, VehicleService>();
+builder.Services.AddScoped<IDriverService, DriverService>();
 
 var app = builder.Build();
 
@@ -35,7 +37,10 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.UseSwaggerUI(options =>
-        options.SwaggerEndpoint("/openapi/v1.json", "DriveOp API v1"));
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "DriveOp API v1");
+        options.RoutePrefix = "swagger";
+    });
 }
 
 app.UseHttpsRedirection();

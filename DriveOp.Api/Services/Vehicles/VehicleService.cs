@@ -5,7 +5,7 @@ using DriveOp.Api.DTOs.Vehicles;
 using DriveOp.Api.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace DriveOp.Api.Services
+namespace DriveOp.Api.Services.Vehicles
 {
     public class VehicleService : IVehicleService
     {
@@ -90,6 +90,12 @@ namespace DriveOp.Api.Services
 
             if (fleetNumberTaken)
                 return ServiceResult<VehicleDto>.Conflict($"Fleet number '{dto.FleetNumber}' is already in use.");
+
+            var registrationNumberTaken = await _context.Vehicles
+                .AnyAsync(v => v.RegistrationNumber == dto.FleetNumber, cancellationToken);
+
+            if (registrationNumberTaken)
+                return ServiceResult<VehicleDto>.Conflict($"Registration number '{dto.RegistrationNumber}' is already in use.");
 
             var municipalityExists = await _context.Municipalities
                 .AnyAsync(m => m.Id == dto.MunicipalityId, cancellationToken);

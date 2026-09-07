@@ -2,7 +2,7 @@
 using DriveOp.Api.DTOs.Common;
 using DriveOp.Api.DTOs.Vehicles;
 
-namespace DriveOp.Api.Services
+namespace DriveOp.Api.Services.Vehicles
 {
     public interface IVehicleService
     {

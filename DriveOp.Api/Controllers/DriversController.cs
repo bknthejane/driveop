@@ -1,46 +1,46 @@
 ﻿using DriveOp.Api.Common;
 using DriveOp.Api.DTOs.Common;
-using DriveOp.Api.DTOs.Vehicles;
-using DriveOp.Api.Services.Vehicles;
+using DriveOp.Api.DTOs.Drivers;
+using DriveOp.Api.Services.Drivers;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DriveOp.Api.Controllers
 {
     [ApiController]
-    [Route("api/vehicles")]
-    public class VehiclesController : ControllerBase
+    [Route("api/drivers")]
+    public class DriversController : ControllerBase
     {
-        private readonly IVehicleService _vehicleService;
+        private readonly IDriverService _driverService;
 
-        public VehiclesController(IVehicleService vehicleService)
+        public DriversController(IDriverService driverService)
         {
-            _vehicleService = vehicleService;
+            _driverService = driverService;
         }
 
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<VehicleListDto>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetAll([FromQuery] VehicleQueryParameters parameters, CancellationToken cancellationToken)
+        [ProducesResponseType(typeof(PagedResult<DriverListDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAll([FromQuery] DriverQueryParameters parameters, CancellationToken cancellationToken)
         {
-            var vehicles = await _vehicleService.GetAllAsync(parameters, cancellationToken);
-            return Ok(vehicles);
+            var drivers = await _driverService.GetAllAsync(parameters, cancellationToken);
+            return Ok(drivers);
         }
 
         [HttpGet("{id:guid}")]
-        [ProducesResponseType(typeof(VehicleDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(DriverDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
         {
-            var result = await _vehicleService.GetByIdAsync(id, cancellationToken);
+            var result = await _driverService.GetByIdAsync(id, cancellationToken);
             return result.Succeeded ? Ok(result.Value) : ToErrorResponse(result);
         }
 
         [HttpPost]
-        [ProducesResponseType(typeof(VehicleDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(DriverDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
-        public async Task<IActionResult> Create(CreateVehicleDto dto, CancellationToken cancellationToken)
+        public async Task<IActionResult> Create(CreateDriverDto dto, CancellationToken cancellationToken)
         {
-            var result = await _vehicleService.CreateAsync(dto, cancellationToken);
+            var result = await _driverService.CreateAsync(dto, cancellationToken);
 
             if (!result.Succeeded)
                 return ToErrorResponse(result);
@@ -55,19 +55,20 @@ namespace DriveOp.Api.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> Update(Guid id, UpdateVehicleDto dto, CancellationToken cancellationToken)
+        public async Task<IActionResult> Update(Guid id, UpdateDriverDto dto, CancellationToken cancellationToken)
         {
-            var result = await _vehicleService.UpdateAsync(id, dto, cancellationToken);
+            var result = await _driverService.UpdateAsync(id, dto, cancellationToken);
             return result.Succeeded ? NoContent() : ToErrorResponse(result);
         }
 
         [HttpDelete("{id:guid}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
         {
-            var result = await _vehicleService.DeleteAsync(id, cancellationToken);
-            return result.Succeeded ? NoContent() : ToErrorResponse(result);
+            var result = await _driverService.DeleteAsync(id, cancellationToken);
+            return result.Succeeded ? Ok(result) : ToErrorResponse(result);
         }
 
         private IActionResult ToErrorResponse<T>(ServiceResult<T> result) =>
