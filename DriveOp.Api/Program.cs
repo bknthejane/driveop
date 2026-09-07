@@ -1,5 +1,6 @@
 using DriveOp.Api.Data;
 using DriveOp.Api.Services.Drivers;
+using DriveOp.Api.Services.Incidents;
 using DriveOp.Api.Services.Vehicles;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,6 +30,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
+builder.Services.AddScoped<IIncidentService, IncidentService>();
 
 var app = builder.Build();
 
