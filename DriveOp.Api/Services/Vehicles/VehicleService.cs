@@ -86,7 +86,8 @@ namespace DriveOp.Api.Services.Vehicles
                 return ServiceResult<VehicleDto>.Validation("A valid license expiry date is required.");
 
             var fleetNumberTaken = await _context.Vehicles
-                .AnyAsync(v => v.FleetNumber == dto.FleetNumber, cancellationToken);
+                .AnyAsync(v => v.MunicipalityId == dto.MunicipalityId
+                            && v.FleetNumber == dto.FleetNumber, cancellationToken);
 
             if (fleetNumberTaken)
                 return ServiceResult<VehicleDto>.Conflict($"Fleet number '{dto.FleetNumber}' is already in use.");

@@ -15,8 +15,13 @@ namespace DriveOp.Api.Data.Configurations
             builder.Property(v => v.Make).IsRequired().HasMaxLength(100);
             builder.Property(v => v.Model).IsRequired().HasMaxLength(100);
 
-            builder.HasIndex(v => v.FleetNumber).IsUnique();
-            builder.HasIndex(v => v.RegistrationNumber).IsUnique();
+            builder.HasIndex(v => new { v.MunicipalityId, v.FleetNumber })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
+
+            builder.HasIndex(v => v.RegistrationNumber)
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
 
             builder.HasOne(v => v.Municipality)
                 .WithMany(m => m.Vehicles)
