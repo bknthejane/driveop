@@ -1,3 +1,4 @@
+using DriveOp.Api.Common;
 using DriveOp.Api.Data;
 using DriveOp.Api.Services.Drivers;
 using DriveOp.Api.Services.Incidents;
@@ -31,8 +32,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
