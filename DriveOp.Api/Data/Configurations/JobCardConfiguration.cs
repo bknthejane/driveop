@@ -13,7 +13,14 @@ namespace DriveOp.Api.Data.Configurations
             builder.Property(j => j.JobCardNumber).IsRequired().HasMaxLength(50);
             builder.Property(j => j.Notes).HasMaxLength(4000);
 
-            builder.HasIndex(j => j.JobCardNumber).IsUnique();
+            builder.HasIndex(j => new { j.MunicipalityId, j.JobCardNumber })
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
+
+            builder.HasOne(j => j.Municipality)
+                .WithMany(m => m.JobCards)
+                .HasForeignKey(j => j.MunicipalityId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             builder.HasOne(j => j.Incident)
                 .WithOne(i => i.JobCard)

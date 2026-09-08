@@ -12,6 +12,9 @@ namespace DriveOp.Api.Entities
         public DateTime DateOpened { get; set; }
         public DateTime? DateCompleted { get; set; }
 
+        public Guid MunicipalityId { get; set; }
+        public Municipality Municipality { get; set; } = null!;
+
         public Guid IncidentId { get; set; }
         public Incident Incident { get; set; } = null!;
 
