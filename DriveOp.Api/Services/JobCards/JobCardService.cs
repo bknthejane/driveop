@@ -135,7 +135,7 @@ namespace DriveOp.Api.Services.JobCards
 
         private async Task<string> GenerateJobCardNumberAsync(Guid municipalityId, CancellationToken cancellationToken)
         {
-            var prefix = $"JC-{DateTime.UtcNow.Year}-";
+            var prefix = $"JC-{DateTime.UtcNow:yyyyMMdd}-";
 
             var lastNumber = await _context.JobCards
                 .IgnoreQueryFilters()
@@ -152,7 +152,7 @@ namespace DriveOp.Api.Services.JobCards
                 next = parsed + 1;
             }
 
-            return $"{prefix}{next:D4}";
+            return $"{prefix}{next:D3}";
         }
     }
 }

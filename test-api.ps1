@@ -202,7 +202,12 @@ $mechanicA = if ($mechanicIds.Count -ge 1) { $mechanicIds[0].Trim() } else { $nu
 
 $nextYear = (Get-Date).AddYears(1).ToString("yyyy-MM-dd")
 $twoYears = (Get-Date).AddYears(2).ToString("yyyy-MM-dd")
-$currentYear = (Get-Date).Year
+
+# JobCardService builds the prefix from DateTime.UtcNow, so use UTC here too.
+# Local time is ahead of UTC in SAST, so between midnight and 02:00 the local
+# date would be a day ahead and the assertion would look for the wrong prefix.
+$today = (Get-Date).ToUniversalTime().ToString("yyyyMMdd")
+$expectedFirst = "JC-$today-001"
 
 # ---------------------------------------------------------------- drivers
 
@@ -437,8 +442,8 @@ $jobCardA = Invoke-Api -Method POST -Path "/api/incidents/$incidentAId/jobcards"
 Assert-Status "create job card from incident in A" 201 $jobCardA.Status $jobCardA.Body
 $jobCardAId = $jobCardA.Body.id
 
-Assert-True "job card number is JC-$currentYear-0001 for A" `
-    ($jobCardA.Body.jobCardNumber -eq "JC-$currentYear-0001") `
+Assert-True "job card number is $expectedFirst for A" `
+    ($jobCardA.Body.jobCardNumber -eq $expectedFirst) `
     "number was '$($jobCardA.Body.jobCardNumber)'"
 
 Assert-True "job card status is Open" `
@@ -477,15 +482,15 @@ Assert-True "job card carries municipality name" `
     (-not [string]::IsNullOrWhiteSpace($readJobCard.Body.municipalityName)) `
     "municipalityName was '$($readJobCard.Body.municipalityName)'"
 
-# Per-tenant numbering: B counts from one as well.
+# Per-tenant numbering: B counts from 001 as well, on the same day.
 $jobCardB = Invoke-Api -Method POST -Path "/api/incidents/$incidentBId/jobcards" -Body @{
     priority = 2
     notes    = "Brake pads to be replaced."
 }
 Assert-Status "create job card from incident in B" 201 $jobCardB.Status $jobCardB.Body
 
-Assert-True "job card number restarts at JC-$currentYear-0001 for B" `
-    ($jobCardB.Body.jobCardNumber -eq "JC-$currentYear-0001") `
+Assert-True "job card number restarts at $expectedFirst for B" `
+    ($jobCardB.Body.jobCardNumber -eq $expectedFirst) `
     "number was '$($jobCardB.Body.jobCardNumber)'"
 
 $missingJobCard = Invoke-Api -Method GET -Path ("/api/jobcards/" + (NewId))
@@ -573,6 +578,7 @@ else {
 
 Write-Host ""
 Write-Host "Test municipality codes: $codeA, $codeB" -ForegroundColor DarkGray
+Write-Host "Expected first job card number: $expectedFirst" -ForegroundColor DarkGray
 Write-Host "Reset the database with:" -ForegroundColor DarkGray
 Write-Host "  dotnet ef database drop --project DriveOp.Api --force" -ForegroundColor DarkGray
 Write-Host "  dotnet ef database update --project DriveOp.Api" -ForegroundColor DarkGray
