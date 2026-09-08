@@ -3,10 +3,12 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File .\test-api.ps1
 #
-# Creates two municipalities with drivers and vehicles, then exercises the
-# Vehicles, Drivers and Incidents endpoints and asserts the status codes.
+# Creates two municipalities with supervisors, mechanics, drivers and vehicles,
+# then exercises Vehicles, Drivers, Incidents and JobCards and asserts the
+# status codes and the resulting domain state.
 #
-# Municipalities go in via sqlcmd because there is no Municipalities endpoint.
+# Municipalities, supervisors and mechanics go in via sqlcmd because those
+# endpoints do not exist yet.
 
 param(
     [string]$BaseUrl = "http://localhost:5030",
@@ -123,6 +125,11 @@ function Write-Section {
 
 function NewId { return [guid]::NewGuid().ToString() }
 
+function Invoke-Sql {
+    param([string]$Query)
+    return sqlcmd -S $SqlServer -d $Database -h -1 -W -Q $Query
+}
+
 # ---------------------------------------------------------------- setup
 
 Write-Host "DriveOp API smoke test"
@@ -136,19 +143,19 @@ if ($ping.Status -ne 200) {
     exit 1
 }
 
-Write-Section "Setting up municipalities"
+Write-Section "Setting up municipalities, supervisors and mechanics"
 
 $stamp = Get-Date -Format "HHmmss"
 $codeA = "TA$stamp"
 $codeB = "TB$stamp"
 
-$insert = "SET NOCOUNT ON; " +
-          "INSERT INTO Municipalities (Id, Name, Code, Province, CreatedAt, IsDeleted) VALUES " +
-          "(NEWID(), 'Test Municipality A $stamp', '$codeA', 'Gauteng', GETUTCDATE(), 0), " +
-          "(NEWID(), 'Test Municipality B $stamp', '$codeB', 'Gauteng', GETUTCDATE(), 0); " +
-          "SELECT CONVERT(varchar(36), Id) FROM Municipalities WHERE Code IN ('$codeA','$codeB') ORDER BY Code;"
+$municipalityInsert = "SET NOCOUNT ON; " +
+    "INSERT INTO Municipalities (Id, Name, Code, Province, CreatedAt, IsDeleted) VALUES " +
+    "(NEWID(), 'Test Municipality A $stamp', '$codeA', 'Gauteng', GETUTCDATE(), 0), " +
+    "(NEWID(), 'Test Municipality B $stamp', '$codeB', 'Gauteng', GETUTCDATE(), 0); " +
+    "SELECT CONVERT(varchar(36), Id) FROM Municipalities WHERE Code IN ('$codeA','$codeB') ORDER BY Code;"
 
-$sqlOutput = sqlcmd -S $SqlServer -d $Database -h -1 -W -Q $insert
+$sqlOutput = Invoke-Sql $municipalityInsert
 $ids = @($sqlOutput | Where-Object { $_ -match '^[0-9a-fA-F]{8}-' })
 
 if ($ids.Count -lt 2) {
@@ -163,8 +170,39 @@ $municipalityB = $ids[1].Trim()
 Write-Host "  A: $municipalityA  ($codeA)"
 Write-Host "  B: $municipalityB  ($codeB)"
 
+# Supervisors and mechanics, needed for job card assignment.
+$staffInsert = "SET NOCOUNT ON; " +
+    "DECLARE @supA uniqueidentifier = NEWID(), @supB uniqueidentifier = NEWID(); " +
+    "INSERT INTO Supervisors (Id, Name, Surname, Email, MunicipalityId, CreatedAt, IsDeleted) VALUES " +
+    "(@supA, 'Thandi', 'SupA$stamp', 'a@test.gov.za', '$municipalityA', GETUTCDATE(), 0), " +
+    "(@supB, 'Sipho', 'SupB$stamp', 'b@test.gov.za', '$municipalityB', GETUTCDATE(), 0); " +
+    "INSERT INTO Mechanics (Id, Name, Surname, MunicipalityId, SupervisorId, CreatedAt, IsDeleted) VALUES " +
+    "(NEWID(), 'Lerato', 'MechA$stamp', '$municipalityA', @supA, GETUTCDATE(), 0), " +
+    "(NEWID(), 'Bongani', 'MechB$stamp', '$municipalityB', @supB, GETUTCDATE(), 0); " +
+    "SELECT CONVERT(varchar(36), @supA); SELECT CONVERT(varchar(36), @supB);"
+
+$staffOutput = Invoke-Sql $staffInsert
+$staffIds = @($staffOutput | Where-Object { $_ -match '^[0-9a-fA-F]{8}-' })
+
+$supervisorA = $null
+$supervisorB = $null
+if ($staffIds.Count -ge 2) {
+    $supervisorA = $staffIds[0].Trim()
+    $supervisorB = $staffIds[1].Trim()
+    Write-Host "  Supervisor A: $supervisorA"
+    Write-Host "  Supervisor B: $supervisorB"
+}
+else {
+    Write-Host "  Could not create supervisors; assignment tests will be skipped." -ForegroundColor Yellow
+}
+
+$mechanicOutput = Invoke-Sql ("SET NOCOUNT ON; SELECT CONVERT(varchar(36), Id) FROM Mechanics WHERE MunicipalityId = '$municipalityA';")
+$mechanicIds = @($mechanicOutput | Where-Object { $_ -match '^[0-9a-fA-F]{8}-' })
+$mechanicA = if ($mechanicIds.Count -ge 1) { $mechanicIds[0].Trim() } else { $null }
+
 $nextYear = (Get-Date).AddYears(1).ToString("yyyy-MM-dd")
 $twoYears = (Get-Date).AddYears(2).ToString("yyyy-MM-dd")
+$currentYear = (Get-Date).Year
 
 # ---------------------------------------------------------------- drivers
 
@@ -239,6 +277,7 @@ $vehicleB = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
     assignedDriverId   = $driverBId
 }
 Assert-Status "same fleet number 0001 allowed in B" 201 $vehicleB.Status $vehicleB.Body
+$vehicleBId = $vehicleB.Body.id
 
 $dupFleet = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
     fleetNumber        = "0001"
@@ -263,7 +302,6 @@ $crossDriver = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
 }
 Assert-Status "driver from another municipality rejected" 400 $crossDriver.Status $crossDriver.Body
 
-# Enum backed by int: 999 is not a defined VehicleStatus.
 $badStatus = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
     fleetNumber        = "0003"
     registrationNumber = "$codeA 005-GP"
@@ -280,7 +318,7 @@ $updated = Invoke-Api -Method PUT -Path "/api/vehicles/$vehicleAId" -Body @{
     make               = "Toyota"
     model              = "Hilux Legend"
     licenseExpiry      = $twoYears
-    status             = 2
+    status             = 1
     assignedDriverId   = $driverAId
 }
 Assert-Status "update vehicle" 204 $updated.Status $updated.Body
@@ -302,22 +340,31 @@ Assert-Status "driver with assigned vehicle blocked" 409 $blockedDriver.Status $
 
 Write-Section "Incidents"
 
-$incident = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
+$incidentA = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
     description  = "Engine overheating on the N1 near Midrand."
     incidentType = 1
     vehicleId    = $vehicleAId
     driverId     = $driverAId
 }
-Assert-Status "log incident, same municipality" 201 $incident.Status $incident.Body
-$incidentId = $incident.Body.id
+Assert-Status "log incident in A" 201 $incidentA.Status $incidentA.Body
+$incidentAId = $incidentA.Body.id
 
 Assert-True "incident status set server-side to Reported" `
-    ($incident.Body.status -eq "Reported" -or $incident.Body.status -eq 1) `
-    "status was '$($incident.Body.status)'"
+    ($incidentA.Body.status -eq "Reported" -or $incidentA.Body.status -eq 1) `
+    "status was '$($incidentA.Body.status)'"
 
 Assert-True "hasJobCard false on a new incident" `
-    ($incident.Body.hasJobCard -eq $false) `
-    "hasJobCard was '$($incident.Body.hasJobCard)'"
+    ($incidentA.Body.hasJobCard -eq $false) `
+    "hasJobCard was '$($incidentA.Body.hasJobCard)'"
+
+$incidentB = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
+    description  = "Brake failure reported by the driver."
+    incidentType = 1
+    vehicleId    = $vehicleBId
+    driverId     = $driverBId
+}
+Assert-Status "log incident in B" 201 $incidentB.Status $incidentB.Body
+$incidentBId = $incidentB.Body.id
 
 # The rule the database cannot express.
 $crossIncident = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
@@ -344,7 +391,6 @@ $emptyDescription = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
 }
 Assert-Status "empty description rejected by annotations" 400 $emptyDescription.Status $emptyDescription.Body
 
-# [Required] on a non-nullable enum only checks for absence, not validity.
 $badEnum = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
     description  = "Undefined incident type."
     incidentType = 999
@@ -356,6 +402,98 @@ Assert-Status "undefined incident type rejected" 400 $badEnum.Status $badEnum.Bo
 $incidentFilter = "/api/incidents?vehicleId=" + $vehicleAId + "&pageSize=5"
 $filtered = Invoke-Api -Method GET -Path $incidentFilter
 Assert-Status "filter incidents by vehicle" 200 $filtered.Status $filtered.Body
+
+# ---------------------------------------------------------------- job cards
+
+Write-Section "JobCard generation and the transaction"
+
+$badPriority = Invoke-Api -Method POST -Path "/api/incidents/$incidentAId/jobcards" -Body @{
+    priority = 999
+    notes    = "Undefined priority."
+}
+Assert-Status "undefined priority rejected" 400 $badPriority.Status $badPriority.Body
+
+$unknownIncident = Invoke-Api -Method POST -Path ("/api/incidents/" + (NewId) + "/jobcards") -Body @{
+    priority = 2
+}
+Assert-Status "job card for unknown incident" 404 $unknownIncident.Status $unknownIncident.Body
+
+if ($supervisorB) {
+    $crossSupervisor = Invoke-Api -Method POST -Path "/api/incidents/$incidentAId/jobcards" -Body @{
+        priority             = 2
+        assignedSupervisorId = $supervisorB
+    }
+    Assert-Status "supervisor from another municipality rejected" 400 $crossSupervisor.Status $crossSupervisor.Body
+}
+
+$jobCardBody = @{
+    priority = 3
+    notes    = "Coolant leak suspected. Needs a full inspection."
+}
+if ($supervisorA) { $jobCardBody.assignedSupervisorId = $supervisorA }
+if ($mechanicA)   { $jobCardBody.assignedMechanicId = $mechanicA }
+
+$jobCardA = Invoke-Api -Method POST -Path "/api/incidents/$incidentAId/jobcards" -Body $jobCardBody
+Assert-Status "create job card from incident in A" 201 $jobCardA.Status $jobCardA.Body
+$jobCardAId = $jobCardA.Body.id
+
+Assert-True "job card number is JC-$currentYear-0001 for A" `
+    ($jobCardA.Body.jobCardNumber -eq "JC-$currentYear-0001") `
+    "number was '$($jobCardA.Body.jobCardNumber)'"
+
+Assert-True "job card status is Open" `
+    ($jobCardA.Body.status -eq "Open" -or $jobCardA.Body.status -eq 1) `
+    "status was '$($jobCardA.Body.status)'"
+
+# All three writes must have landed.
+Assert-True "transaction: incident advanced to JobCardCreated" `
+    ($jobCardA.Body.incidentStatus -eq "JobCardCreated" -or $jobCardA.Body.incidentStatus -eq 3) `
+    "incidentStatus was '$($jobCardA.Body.incidentStatus)'"
+
+Assert-True "transaction: vehicle advanced to UnderRepair" `
+    ($jobCardA.Body.vehicleStatus -eq "UnderRepair" -or $jobCardA.Body.vehicleStatus -eq 2) `
+    "vehicleStatus was '$($jobCardA.Body.vehicleStatus)'"
+
+# Confirm independently, not just from the create response.
+$vehicleAfter = Invoke-Api -Method GET -Path "/api/vehicles/$vehicleAId"
+Assert-True "vehicle status persisted as UnderRepair" `
+    ($vehicleAfter.Body.status -eq "UnderRepair" -or $vehicleAfter.Body.status -eq 2) `
+    "status was '$($vehicleAfter.Body.status)'"
+
+$incidentAfter = Invoke-Api -Method GET -Path "/api/incidents/$incidentAId"
+Assert-True "incident hasJobCard now true" `
+    ($incidentAfter.Body.hasJobCard -eq $true) `
+    "hasJobCard was '$($incidentAfter.Body.hasJobCard)'"
+
+$duplicateJobCard = Invoke-Api -Method POST -Path "/api/incidents/$incidentAId/jobcards" -Body @{
+    priority = 1
+}
+Assert-Status "second job card on the same incident rejected" 409 $duplicateJobCard.Status $duplicateJobCard.Body
+
+$readJobCard = Invoke-Api -Method GET -Path "/api/jobcards/$jobCardAId"
+Assert-Status "read job card by id" 200 $readJobCard.Status $readJobCard.Body
+
+Assert-True "job card carries municipality name" `
+    (-not [string]::IsNullOrWhiteSpace($readJobCard.Body.municipalityName)) `
+    "municipalityName was '$($readJobCard.Body.municipalityName)'"
+
+# Per-tenant numbering: B counts from one as well.
+$jobCardB = Invoke-Api -Method POST -Path "/api/incidents/$incidentBId/jobcards" -Body @{
+    priority = 2
+    notes    = "Brake pads to be replaced."
+}
+Assert-Status "create job card from incident in B" 201 $jobCardB.Status $jobCardB.Body
+
+Assert-True "job card number restarts at JC-$currentYear-0001 for B" `
+    ($jobCardB.Body.jobCardNumber -eq "JC-$currentYear-0001") `
+    "number was '$($jobCardB.Body.jobCardNumber)'"
+
+$missingJobCard = Invoke-Api -Method GET -Path ("/api/jobcards/" + (NewId))
+Assert-Status "unknown job card id" 404 $missingJobCard.Status $missingJobCard.Body
+
+# Incident delete must be blocked while a job card exists.
+$blockedIncident = Invoke-Api -Method DELETE -Path "/api/incidents/$incidentAId"
+Assert-Status "incident with a job card cannot be deleted" 409 $blockedIncident.Status $blockedIncident.Body
 
 # ---------------------------------------------------------------- pagination
 
@@ -373,7 +511,6 @@ Assert-True "pageSize capped at $($capped.Body.pageSize)" `
     ($capped.Body.pageSize -le 100) `
     "pageSize was $($capped.Body.pageSize)"
 
-# (Page - 1) * PageSize would overflow int and produce a negative OFFSET.
 $hugePage = Invoke-Api -Method GET -Path "/api/vehicles?page=21474838&pageSize=100"
 Assert-Status "huge page number does not overflow" 200 $hugePage.Status $hugePage.Body
 
@@ -384,47 +521,42 @@ Assert-Status "negative page clamped" 200 $negativePage.Status $negativePage.Bod
 
 Write-Section "Soft delete and fleet number reuse"
 
-$deleteIncident = Invoke-Api -Method DELETE -Path "/api/incidents/$incidentId"
-Assert-Status "delete incident" 204 $deleteIncident.Status $deleteIncident.Body
-
-$unassign = Invoke-Api -Method PUT -Path "/api/vehicles/$vehicleAId" -Body @{
-    registrationNumber = "$codeA 001-GP"
-    make               = "Toyota"
-    model              = "Hilux Legend"
+# Vehicle B is untouched by job cards, so use it for the delete path.
+$unassignB = Invoke-Api -Method PUT -Path "/api/vehicles/$vehicleBId" -Body @{
+    registrationNumber = "$codeB 001-GP"
+    make               = "Isuzu"
+    model              = "D-Max"
     licenseExpiry      = $twoYears
-    status             = 2
+    status             = 1
     assignedDriverId   = $null
 }
-Assert-Status "unassign driver from vehicle" 204 $unassign.Status $unassign.Body
+Assert-Status "unassign driver from vehicle B" 204 $unassignB.Status $unassignB.Body
 
-$deleteVehicle = Invoke-Api -Method DELETE -Path "/api/vehicles/$vehicleAId"
-Assert-Status "delete vehicle" 204 $deleteVehicle.Status $deleteVehicle.Body
+$deleteVehicleB = Invoke-Api -Method DELETE -Path "/api/vehicles/$vehicleBId"
+Assert-Status "delete vehicle B" 204 $deleteVehicleB.Status $deleteVehicleB.Body
 
-$gone = Invoke-Api -Method GET -Path "/api/vehicles/$vehicleAId"
-Assert-Status "deleted vehicle hidden by query filter" 404 $gone.Status $gone.Body
+$goneB = Invoke-Api -Method GET -Path "/api/vehicles/$vehicleBId"
+Assert-Status "deleted vehicle hidden by query filter" 404 $goneB.Status $goneB.Body
 
-# The row must still be there.
-$rowQuery = "SET NOCOUNT ON; SELECT CAST(IsDeleted AS int) FROM Vehicles WHERE Id = '$vehicleAId';"
-$rowOutput = sqlcmd -S $SqlServer -d $Database -h -1 -W -Q $rowQuery
+$rowOutput = Invoke-Sql "SET NOCOUNT ON; SELECT CAST(IsDeleted AS int) FROM Vehicles WHERE Id = '$vehicleBId';"
 $flagLine = @($rowOutput | Where-Object { $_ -match '^\s*\d+\s*$' } | Select-Object -First 1)
 
 Assert-True "row still present with IsDeleted = 1" `
     ((($flagLine -join "").Trim()) -eq "1") `
     "sqlcmd returned '$($rowOutput -join ' | ')'"
 
-# Filtered index should now allow the number again.
 $reuse = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
     fleetNumber        = "0001"
-    registrationNumber = "$codeA 004-GP"
+    registrationNumber = "$codeB 004-GP"
     make               = "Hino"
     model              = "300"
     licenseExpiry      = $nextYear
     status             = 1
-    municipalityId     = $municipalityA
+    municipalityId     = $municipalityB
 }
 Assert-Status "fleet number reusable after soft delete" 201 $reuse.Status $reuse.Body
 
-$nowDeletable = Invoke-Api -Method DELETE -Path "/api/drivers/$driverAId"
+$nowDeletable = Invoke-Api -Method DELETE -Path "/api/drivers/$driverBId"
 Assert-Status "driver deletable once unassigned" 204 $nowDeletable.Status $nowDeletable.Body
 
 # ---------------------------------------------------------------- summary
