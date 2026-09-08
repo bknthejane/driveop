@@ -43,6 +43,17 @@ namespace DriveOp.Api.Controllers
                 result.Value);
         }
 
+        [HttpPut("{id:guid}/status")]
+        [ProducesResponseType(typeof(JobCardDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> UpdateStatus(Guid id, UpdateJobCardStatusDto dto, CancellationToken cancellationToken)
+        {
+            var result = await _jobCardService.UpdateStatusAsync(id, dto, cancellationToken);
+            return result.Succeeded ? Ok(result.Value) : ToErrorResponse(result);
+        }
+
         private IActionResult ToErrorResponse<T>(ServiceResult<T> result) =>
             result.ErrorType switch
             {

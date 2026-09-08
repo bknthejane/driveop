@@ -7,5 +7,6 @@ namespace DriveOp.Api.Services.JobCards
     {
         Task<ServiceResult<JobCardDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken);
         Task<ServiceResult<JobCardDto>> CreateFromIncidentAsync(Guid incidentId, CreateJobCardDto dto, CancellationToken cancellationToken);
+        Task<ServiceResult<JobCardDto>> UpdateStatusAsync(Guid id, UpdateJobCardStatusDto dto, CancellationToken cancellationToken);
     }
 }
