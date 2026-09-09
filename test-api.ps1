@@ -205,6 +205,10 @@ $mechanicOutput = Invoke-Sql ("SET NOCOUNT ON; SELECT CONVERT(varchar(36), Id) F
 $mechanicIds = @($mechanicOutput | Where-Object { $_ -match '^[0-9a-fA-F]{8}-' })
 $mechanicA = if ($mechanicIds.Count -ge 1) { $mechanicIds[0].Trim() } else { $null }
 
+$mechanicBOutput = Invoke-Sql ("SET NOCOUNT ON; SELECT CONVERT(varchar(36), Id) FROM Mechanics WHERE MunicipalityId = '$municipalityB';")
+$mechanicBIds = @($mechanicBOutput | Where-Object { $_ -match '^[0-9a-fA-F]{8}-' })
+$mechanicB = if ($mechanicBIds.Count -ge 1) { $mechanicBIds[0].Trim() } else { $null }
+
 $nextYear = (Get-Date).AddYears(1).ToString("yyyy-MM-dd")
 $twoYears = (Get-Date).AddYears(2).ToString("yyyy-MM-dd")
 
@@ -513,6 +517,7 @@ $jobCardB = Invoke-Api -Method POST -Path "/api/incidents/$incidentBId/jobcards"
     notes    = "Brake pads to be replaced."
 }
 Assert-Status "create job card from incident in B" 201 $jobCardB.Status $jobCardB.Body
+$jobCardBId = $jobCardB.Body.id
 
 Assert-True "job card number restarts at $expectedFirst for B" `
     ($jobCardB.Body.jobCardNumber -eq $expectedFirst) `
@@ -642,6 +647,129 @@ $reviveCancelled = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardA2Id/stat
 }
 Assert-Status "Cancelled is terminal" 409 $reviveCancelled.Status $reviveCancelled.Body
 
+# ---------------------------------------------------------------- jobcard crud
+
+Write-Section "JobCard list, update and assignment"
+
+$listAll = Invoke-Api -Method GET -Path "/api/jobcards?pageSize=10"
+Assert-Status "list job cards" 200 $listAll.Status $listAll.Body
+
+Assert-True "list returns items with totalCount" `
+    ($listAll.Body.totalCount -ge 3) `
+    "totalCount was '$($listAll.Body.totalCount)'"
+
+$byMunicipality = Invoke-Api -Method GET -Path "/api/jobcards?municipalityId=$municipalityA"
+Assert-Status "filter job cards by municipality" 200 $byMunicipality.Status $byMunicipality.Body
+
+Assert-True "municipality filter excludes other tenants" `
+    ($byMunicipality.Body.totalCount -eq 2) `
+    "totalCount was '$($byMunicipality.Body.totalCount)'"
+
+$byStatus = Invoke-Api -Method GET -Path "/api/jobcards?status=3"
+Assert-Status "filter job cards by status" 200 $byStatus.Status $byStatus.Body
+
+$byPriority = Invoke-Api -Method GET -Path "/api/jobcards?priority=1"
+Assert-Status "filter job cards by priority" 200 $byPriority.Status $byPriority.Body
+
+$unassignedCards = Invoke-Api -Method GET -Path "/api/jobcards?unassigned=true"
+Assert-Status "filter unassigned job cards" 200 $unassignedCards.Status $unassignedCards.Body
+
+$badListEnum = Invoke-Api -Method GET -Path "/api/jobcards?status=999"
+Assert-True "undefined status filter does not 500" `
+    ($badListEnum.Status -eq 200 -or $badListEnum.Status -eq 400) `
+    "status was $($badListEnum.Status)"
+
+# Job card B is still Open, so it can be updated and assigned.
+$updateCard = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardBId" -Body @{
+    priority = 4
+    notes    = "Escalated after a second failure."
+}
+Assert-Status "update priority and notes" 204 $updateCard.Status $updateCard.Body
+
+$afterUpdate = Invoke-Api -Method GET -Path "/api/jobcards/$jobCardBId"
+Assert-True "priority raised to Critical" `
+    (Test-Enum $afterUpdate.Body.priority "Critical" 4) `
+    "priority was '$($afterUpdate.Body.priority)'"
+
+Assert-True "notes persisted" `
+    ($afterUpdate.Body.notes -like "*second failure*") `
+    "notes were '$($afterUpdate.Body.notes)'"
+
+$badUpdateEnum = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardBId" -Body @{
+    priority = 999
+}
+Assert-Status "undefined priority on update rejected" 400 $badUpdateEnum.Status $badUpdateEnum.Body
+
+$updateUnknown = Invoke-Api -Method PUT -Path ("/api/jobcards/" + (NewId)) -Body @{
+    priority = 2
+}
+Assert-Status "update on unknown job card" 404 $updateUnknown.Status $updateUnknown.Body
+
+# Terminal cards keep their priority.
+$terminalUpdate = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId" -Body @{
+    priority = 1
+    notes    = "Warranty claim submitted."
+}
+Assert-Status "priority change on a Completed card rejected" 409 $terminalUpdate.Status $terminalUpdate.Body
+
+# Assignment must stay within the job card's municipality.
+if ($supervisorB -and $mechanicB) {
+    $assign = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardBId/assignment" -Body @{
+        assignedSupervisorId = $supervisorB
+        assignedMechanicId   = $mechanicB
+    }
+    Assert-Status "assign supervisor and mechanic from the same municipality" 200 $assign.Status $assign.Body
+
+    Assert-True "supervisor name returned after assignment" `
+        (-not [string]::IsNullOrWhiteSpace($assign.Body.assignedSupervisorName)) `
+        "name was '$($assign.Body.assignedSupervisorName)'"
+
+    Assert-True "mechanic name returned after assignment" `
+        (-not [string]::IsNullOrWhiteSpace($assign.Body.assignedMechanicName)) `
+        "name was '$($assign.Body.assignedMechanicName)'"
+}
+
+if ($supervisorA) {
+    $crossAssign = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardBId/assignment" -Body @{
+        assignedSupervisorId = $supervisorA
+    }
+    Assert-Status "supervisor from another municipality rejected on assign" 400 $crossAssign.Status $crossAssign.Body
+}
+
+if ($mechanicA) {
+    $crossAssignMechanic = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardBId/assignment" -Body @{
+        assignedMechanicId = $mechanicA
+    }
+    Assert-Status "mechanic from another municipality rejected on assign" 400 $crossAssignMechanic.Status $crossAssignMechanic.Body
+}
+
+# Null on the assignment endpoint clears, rather than leaving alone.
+$clearAssignment = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardBId/assignment" -Body @{
+    assignedSupervisorId = $null
+    assignedMechanicId   = $null
+}
+Assert-Status "null assignment clears both" 200 $clearAssignment.Status $clearAssignment.Body
+
+Assert-True "supervisor cleared" `
+    ($null -eq $clearAssignment.Body.assignedSupervisorId) `
+    "id was '$($clearAssignment.Body.assignedSupervisorId)'"
+
+Assert-True "mechanic cleared" `
+    ($null -eq $clearAssignment.Body.assignedMechanicId) `
+    "id was '$($clearAssignment.Body.assignedMechanicId)'"
+
+if ($supervisorA) {
+    $assignTerminal = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/assignment" -Body @{
+        assignedSupervisorId = $supervisorA
+    }
+    Assert-Status "Completed card cannot be reassigned" 409 $assignTerminal.Status $assignTerminal.Body
+}
+
+$assignUnknown = Invoke-Api -Method PUT -Path ("/api/jobcards/" + (NewId) + "/assignment") -Body @{
+    assignedSupervisorId = $null
+}
+Assert-Status "assignment on unknown job card" 404 $assignUnknown.Status $assignUnknown.Body
+
 # ---------------------------------------------------------------- pagination
 
 Write-Section "Pagination"
@@ -663,6 +791,9 @@ Assert-Status "huge page number does not overflow" 200 $hugePage.Status $hugePag
 
 $negativePage = Invoke-Api -Method GET -Path "/api/vehicles?page=-5&pageSize=10"
 Assert-Status "negative page clamped" 200 $negativePage.Status $negativePage.Body
+
+$pagedJobCards = Invoke-Api -Method GET -Path "/api/jobcards?page=21474838&pageSize=100"
+Assert-Status "job card pagination does not overflow" 200 $pagedJobCards.Status $pagedJobCards.Body
 
 # ---------------------------------------------------------------- soft delete
 
