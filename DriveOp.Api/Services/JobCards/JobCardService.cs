@@ -192,6 +192,12 @@ namespace DriveOp.Api.Services.JobCards
 
                 return await GetByIdAsync(id, cancellationToken);
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return ServiceResult<JobCardDto>.Conflict(
+                    "This job card was changed by someone else. Reload and try again.");
+            }
             catch
             {
                 await transaction.RollbackAsync(cancellationToken);

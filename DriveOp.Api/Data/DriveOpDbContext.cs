@@ -23,6 +23,14 @@ namespace DriveOp.Api.Data
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(DriveOpDbContext).Assembly);
+
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes()
+                .Where(e => typeof(BaseEntity).IsAssignableFrom(e.ClrType)))
+            {
+                modelBuilder.Entity(entityType.ClrType)
+                    .Property(nameof(BaseEntity.RowVersion))
+                    .IsRowVersion();
+            }
         }
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
