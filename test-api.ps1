@@ -130,6 +130,12 @@ function Invoke-Sql {
     return sqlcmd -S $SqlServer -d $Database -h -1 -W -Q $Query
 }
 
+# Enums may serialise as names or ints depending on converter config.
+function Test-Enum {
+    param($Actual, [string]$Name, [int]$Value)
+    return ($Actual -eq $Name -or $Actual -eq $Value)
+}
+
 # ---------------------------------------------------------------- setup
 
 Write-Host "DriveOp API smoke test"
@@ -170,7 +176,6 @@ $municipalityB = $ids[1].Trim()
 Write-Host "  A: $municipalityA  ($codeA)"
 Write-Host "  B: $municipalityB  ($codeB)"
 
-# Supervisors and mechanics, needed for job card assignment.
 $staffInsert = "SET NOCOUNT ON; " +
     "DECLARE @supA uniqueidentifier = NEWID(), @supB uniqueidentifier = NEWID(); " +
     "INSERT INTO Supervisors (Id, Name, Surname, Email, MunicipalityId, CreatedAt, IsDeleted) VALUES " +
@@ -204,8 +209,6 @@ $nextYear = (Get-Date).AddYears(1).ToString("yyyy-MM-dd")
 $twoYears = (Get-Date).AddYears(2).ToString("yyyy-MM-dd")
 
 # JobCardService builds the prefix from DateTime.UtcNow, so use UTC here too.
-# Local time is ahead of UTC in SAST, so between midnight and 02:00 the local
-# date would be a day ahead and the assertion would look for the wrong prefix.
 $today = (Get-Date).ToUniversalTime().ToString("yyyyMMdd")
 $expectedFirst = "JC-$today-001"
 
@@ -284,9 +287,22 @@ $vehicleB = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
 Assert-Status "same fleet number 0001 allowed in B" 201 $vehicleB.Status $vehicleB.Body
 $vehicleBId = $vehicleB.Body.id
 
+# A second vehicle in A, used for the cancellation path.
+$vehicleA2 = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
+    fleetNumber        = "0002"
+    registrationNumber = "$codeA 002-GP"
+    make               = "Ford"
+    model              = "Ranger"
+    licenseExpiry      = $nextYear
+    status             = 1
+    municipalityId     = $municipalityA
+}
+Assert-Status "create second vehicle in A" 201 $vehicleA2.Status $vehicleA2.Body
+$vehicleA2Id = $vehicleA2.Body.id
+
 $dupFleet = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
     fleetNumber        = "0001"
-    registrationNumber = "$codeA 002-GP"
+    registrationNumber = "$codeA 009-GP"
     make               = "Ford"
     model              = "Ranger"
     licenseExpiry      = $nextYear
@@ -296,7 +312,7 @@ $dupFleet = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
 Assert-Status "duplicate fleet number within A rejected" 409 $dupFleet.Status $dupFleet.Body
 
 $crossDriver = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
-    fleetNumber        = "0002"
+    fleetNumber        = "0004"
     registrationNumber = "$codeA 003-GP"
     make               = "Nissan"
     model              = "NP300"
@@ -308,7 +324,7 @@ $crossDriver = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
 Assert-Status "driver from another municipality rejected" 400 $crossDriver.Status $crossDriver.Body
 
 $badStatus = Invoke-Api -Method POST -Path "/api/vehicles" -Body @{
-    fleetNumber        = "0003"
+    fleetNumber        = "0005"
     registrationNumber = "$codeA 005-GP"
     make               = "Toyota"
     model              = "Quantum"
@@ -355,7 +371,7 @@ Assert-Status "log incident in A" 201 $incidentA.Status $incidentA.Body
 $incidentAId = $incidentA.Body.id
 
 Assert-True "incident status set server-side to Reported" `
-    ($incidentA.Body.status -eq "Reported" -or $incidentA.Body.status -eq 1) `
+    (Test-Enum $incidentA.Body.status "Reported" 1) `
     "status was '$($incidentA.Body.status)'"
 
 Assert-True "hasJobCard false on a new incident" `
@@ -370,6 +386,16 @@ $incidentB = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
 }
 Assert-Status "log incident in B" 201 $incidentB.Status $incidentB.Body
 $incidentBId = $incidentB.Body.id
+
+# Second incident in A, for the cancellation path.
+$incidentA2 = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
+    description  = "Windscreen chipped by road debris."
+    incidentType = 5
+    vehicleId    = $vehicleA2Id
+    driverId     = $driverAId
+}
+Assert-Status "log second incident in A" 201 $incidentA2.Status $incidentA2.Body
+$incidentA2Id = $incidentA2.Body.id
 
 # The rule the database cannot express.
 $crossIncident = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
@@ -447,22 +473,21 @@ Assert-True "job card number is $expectedFirst for A" `
     "number was '$($jobCardA.Body.jobCardNumber)'"
 
 Assert-True "job card status is Open" `
-    ($jobCardA.Body.status -eq "Open" -or $jobCardA.Body.status -eq 1) `
+    (Test-Enum $jobCardA.Body.status "Open" 1) `
     "status was '$($jobCardA.Body.status)'"
 
-# All three writes must have landed.
 Assert-True "transaction: incident advanced to JobCardCreated" `
-    ($jobCardA.Body.incidentStatus -eq "JobCardCreated" -or $jobCardA.Body.incidentStatus -eq 3) `
+    (Test-Enum $jobCardA.Body.incidentStatus "JobCardCreated" 3) `
     "incidentStatus was '$($jobCardA.Body.incidentStatus)'"
 
 Assert-True "transaction: vehicle advanced to UnderRepair" `
-    ($jobCardA.Body.vehicleStatus -eq "UnderRepair" -or $jobCardA.Body.vehicleStatus -eq 2) `
+    (Test-Enum $jobCardA.Body.vehicleStatus "UnderRepair" 2) `
     "vehicleStatus was '$($jobCardA.Body.vehicleStatus)'"
 
 # Confirm independently, not just from the create response.
 $vehicleAfter = Invoke-Api -Method GET -Path "/api/vehicles/$vehicleAId"
 Assert-True "vehicle status persisted as UnderRepair" `
-    ($vehicleAfter.Body.status -eq "UnderRepair" -or $vehicleAfter.Body.status -eq 2) `
+    (Test-Enum $vehicleAfter.Body.status "UnderRepair" 2) `
     "status was '$($vehicleAfter.Body.status)'"
 
 $incidentAfter = Invoke-Api -Method GET -Path "/api/incidents/$incidentAId"
@@ -496,9 +521,126 @@ Assert-True "job card number restarts at $expectedFirst for B" `
 $missingJobCard = Invoke-Api -Method GET -Path ("/api/jobcards/" + (NewId))
 Assert-Status "unknown job card id" 404 $missingJobCard.Status $missingJobCard.Body
 
-# Incident delete must be blocked while a job card exists.
 $blockedIncident = Invoke-Api -Method DELETE -Path "/api/incidents/$incidentAId"
 Assert-Status "incident with a job card cannot be deleted" 409 $blockedIncident.Status $blockedIncident.Body
+
+# ---------------------------------------------------------------- lifecycle
+
+Write-Section "JobCard status lifecycle"
+
+$badTransitionEnum = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 999
+}
+Assert-Status "undefined job card status rejected" 400 $badTransitionEnum.Status $badTransitionEnum.Body
+
+$statusUnknown = Invoke-Api -Method PUT -Path ("/api/jobcards/" + (NewId) + "/status") -Body @{
+    status = 2
+}
+Assert-Status "status update on unknown job card" 404 $statusUnknown.Status $statusUnknown.Body
+
+# Open cannot jump straight to Completed.
+$skipStep = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 3
+}
+Assert-Status "Open cannot skip to Completed" 409 $skipStep.Status $skipStep.Body
+
+# Self-transition is not in the allowed set.
+$selfTransition = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 1
+}
+Assert-Status "Open to Open rejected" 409 $selfTransition.Status $selfTransition.Body
+
+# Open to InProgress.
+$toInProgress = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 2
+    notes  = "Mechanic has started on the coolant system."
+}
+Assert-Status "Open to InProgress" 200 $toInProgress.Status $toInProgress.Body
+
+Assert-True "job card now InProgress" `
+    (Test-Enum $toInProgress.Body.status "InProgress" 2) `
+    "status was '$($toInProgress.Body.status)'"
+
+Assert-True "notes updated on transition" `
+    ($toInProgress.Body.notes -like "*coolant system*") `
+    "notes were '$($toInProgress.Body.notes)'"
+
+# InProgress to Completed cascades to the incident and the vehicle.
+$toCompleted = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 3
+    notes  = "Radiator replaced and pressure tested."
+}
+Assert-Status "InProgress to Completed" 200 $toCompleted.Status $toCompleted.Body
+
+Assert-True "job card now Completed" `
+    (Test-Enum $toCompleted.Body.status "Completed" 3) `
+    "status was '$($toCompleted.Body.status)'"
+
+Assert-True "DateCompleted stamped" `
+    ($null -ne $toCompleted.Body.dateCompleted) `
+    "dateCompleted was '$($toCompleted.Body.dateCompleted)'"
+
+Assert-True "cascade: incident resolved" `
+    (Test-Enum $toCompleted.Body.incidentStatus "Resolved" 4) `
+    "incidentStatus was '$($toCompleted.Body.incidentStatus)'"
+
+Assert-True "cascade: vehicle returned to Active" `
+    (Test-Enum $toCompleted.Body.vehicleStatus "Active" 1) `
+    "vehicleStatus was '$($toCompleted.Body.vehicleStatus)'"
+
+# Confirm the vehicle independently, not from the transition response.
+$vehicleReleased = Invoke-Api -Method GET -Path "/api/vehicles/$vehicleAId"
+Assert-True "vehicle status persisted as Active" `
+    (Test-Enum $vehicleReleased.Body.status "Active" 1) `
+    "status was '$($vehicleReleased.Body.status)'"
+
+# Completed is terminal.
+$reopen = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 2
+}
+Assert-Status "Completed is terminal, cannot reopen" 409 $reopen.Status $reopen.Body
+
+$cancelCompleted = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardAId/status" -Body @{
+    status = 4
+}
+Assert-Status "Completed cannot be cancelled" 409 $cancelCompleted.Status $cancelCompleted.Body
+
+# A resolved incident cannot spawn a new job card.
+$jobCardOnResolved = Invoke-Api -Method POST -Path "/api/incidents/$incidentAId/jobcards" -Body @{
+    priority = 1
+}
+Assert-Status "no new job card on a resolved incident" 409 $jobCardOnResolved.Status $jobCardOnResolved.Body
+
+# The cancellation path, on the second job card in A.
+$jobCardA2 = Invoke-Api -Method POST -Path "/api/incidents/$incidentA2Id/jobcards" -Body @{
+    priority = 1
+    notes    = "Windscreen to be assessed."
+}
+Assert-Status "create second job card in A" 201 $jobCardA2.Status $jobCardA2.Body
+$jobCardA2Id = $jobCardA2.Body.id
+
+Assert-True "second job card in A numbered 002" `
+    ($jobCardA2.Body.jobCardNumber -eq "JC-$today-002") `
+    "number was '$($jobCardA2.Body.jobCardNumber)'"
+
+$cancelled = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardA2Id/status" -Body @{
+    status = 4
+    notes  = "Damage within tolerance, no repair required."
+}
+Assert-Status "Open to Cancelled" 200 $cancelled.Status $cancelled.Body
+
+Assert-True "cancel: incident reverted to Acknowledged" `
+    (Test-Enum $cancelled.Body.incidentStatus "Acknowledged" 2) `
+    "incidentStatus was '$($cancelled.Body.incidentStatus)'"
+
+Assert-True "cancel: vehicle returned to Active" `
+    (Test-Enum $cancelled.Body.vehicleStatus "Active" 1) `
+    "vehicleStatus was '$($cancelled.Body.vehicleStatus)'"
+
+$reviveCancelled = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardA2Id/status" -Body @{
+    status = 2
+}
+Assert-Status "Cancelled is terminal" 409 $reviveCancelled.Status $reviveCancelled.Body
 
 # ---------------------------------------------------------------- pagination
 
@@ -526,7 +668,7 @@ Assert-Status "negative page clamped" 200 $negativePage.Status $negativePage.Bod
 
 Write-Section "Soft delete and fleet number reuse"
 
-# Vehicle B is untouched by job cards, so use it for the delete path.
+# Vehicle B is untouched by completed job cards, so use it for the delete path.
 $unassignB = Invoke-Api -Method PUT -Path "/api/vehicles/$vehicleBId" -Body @{
     registrationNumber = "$codeB 001-GP"
     make               = "Isuzu"

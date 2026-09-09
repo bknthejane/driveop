@@ -133,6 +133,78 @@ namespace DriveOp.Api.Services.JobCards
 
         }
 
+        public async Task<ServiceResult<JobCardDto>> UpdateStatusAsync(Guid id, UpdateJobCardStatusDto dto, CancellationToken cancellationToken)
+        {
+            if (!Enum.IsDefined(dto.Status))
+                return ServiceResult<JobCardDto>.Validation(
+                    $"'{(int)dto.Status}' is not a valid job card status.");
+
+            var jobCard = await _context.JobCards
+                .Include(j => j.Incident)
+                    .ThenInclude(i => i.Vehicle)
+                .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+            if (jobCard is null)
+                return ServiceResult<JobCardDto>.NotFound($"Job card {id} was not found.");
+
+            if (!JobCardStatusTransactions.IsAllowed(jobCard.Status, dto.Status))
+            {
+                var allowed = JobCardStatusTransactions.AllowedFrom(jobCard.Status);
+
+                var detail = allowed.Count == 0
+                    ? $"A job card in status {jobCard.Status} is final and cannot be changed."
+                    : $"Cannot move a job card from {jobCard.Status} to {dto.Status}." +
+                    $"Allowed: {string.Join(", ", allowed)}.";
+
+                return ServiceResult<JobCardDto>.Conflict(detail);
+            }
+
+            await using var transaction = await _context.Database
+                .BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                jobCard.Status = dto.Status;
+
+                if (dto.Notes is not null)
+                    jobCard.Notes = dto.Notes;
+
+                switch (dto.Status)
+                {
+                    case JobCardStatus.InProgress:
+                        jobCard.Incident.Vehicle.Status = VehicleStatus.UnderRepair;
+                        break;
+
+                    case JobCardStatus.Completed:
+                        jobCard.DateCompleted = DateTime.UtcNow;
+                        jobCard.Incident.Status = IncidentStatus.Resolved;
+                        jobCard.Incident.Vehicle.Status = VehicleStatus.Active;
+                        break;
+
+                    case JobCardStatus.Cancelled:
+                        jobCard.Incident.Status = IncidentStatus.Acknowledged;
+                        jobCard.Incident.Vehicle.Status = VehicleStatus.Active;
+                        break;
+                }
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                return await GetByIdAsync(id, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return ServiceResult<JobCardDto>.Conflict(
+                    "This job card was changed by someone else. Reload and try again.");
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+
         private async Task<string> GenerateJobCardNumberAsync(Guid municipalityId, CancellationToken cancellationToken)
         {
             var prefix = $"JC-{DateTime.UtcNow:yyyyMMdd}-";
