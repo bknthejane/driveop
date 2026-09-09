@@ -1,4 +1,5 @@
 ﻿using DriveOp.Api.Common;
+using DriveOp.Api.DTOs.Common;
 using DriveOp.Api.DTOs.JobCards;
 using DriveOp.Api.Services.JobCards;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +15,14 @@ namespace DriveOp.Api.Controllers
         public JobCardsController(IJobCardService jobCardService)
         {
             _jobCardService = jobCardService;
+        }
+
+        [HttpGet]
+        [ProducesResponseType(typeof(PagedResult<JobCardListDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAll([FromQuery] JobCardQueryParameters parameters, CancellationToken cancellationToken)
+        {
+            var result = await _jobCardService.GetAllAsync(parameters, cancellationToken);
+            return Ok(result);
         }
 
         [HttpGet("{id:guid}")]
@@ -51,6 +60,28 @@ namespace DriveOp.Api.Controllers
         public async Task<IActionResult> UpdateStatus(Guid id, UpdateJobCardStatusDto dto, CancellationToken cancellationToken)
         {
             var result = await _jobCardService.UpdateStatusAsync(id, dto, cancellationToken);
+            return result.Succeeded ? Ok(result.Value) : ToErrorResponse(result);
+        }
+
+        [HttpPut("{id:guid}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> Update(Guid id, UpdateJobCardDto dto, CancellationToken cancellationToken)
+        {
+            var result = await _jobCardService.UpdateAsync(id, dto, cancellationToken);
+            return result.Succeeded ? NoContent() : ToErrorResponse(result);
+        }
+
+        [HttpPut("{id:guid}/assignment")]
+        [ProducesResponseType(typeof(JobCardDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> Assign(Guid id, AssignJobCardDto dto, CancellationToken cancellationToken)
+        {
+            var result = await _jobCardService.AssignAsync(id, dto, cancellationToken);
             return result.Succeeded ? Ok(result.Value) : ToErrorResponse(result);
         }
 

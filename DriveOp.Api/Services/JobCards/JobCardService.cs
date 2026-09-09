@@ -1,5 +1,6 @@
 ﻿using DriveOp.Api.Common;
 using DriveOp.Api.Data;
+using DriveOp.Api.DTOs.Common;
 using DriveOp.Api.DTOs.JobCards;
 using DriveOp.Api.Entities;
 using DriveOp.Api.Entities.Enums;
@@ -14,6 +15,64 @@ namespace DriveOp.Api.Services.JobCards
         public JobCardService(DriveOpDbContext context)
         {
             _context = context;
+        }
+
+        public async Task<PagedResult<JobCardListDto>> GetAllAsync(JobCardQueryParameters parameters, CancellationToken cancellationToken)
+        {
+            var query = _context.JobCards.AsNoTracking();
+
+            if (parameters.Status.HasValue)
+                query = query.Where(j => j.Status == parameters.Status.Value);
+
+            if (parameters.Priority.HasValue)
+                query = query.Where(j => j.Priority == parameters.Priority.Value);
+
+            if (parameters.MunicipalityId.HasValue)
+                query = query.Where(j => j.MunicipalityId == parameters.MunicipalityId.Value);
+
+            if (parameters.AssignedSupervisorId.HasValue)
+                query = query.Where(j => j.AssignedSupervisorId == parameters.AssignedSupervisorId.Value);
+
+            if (parameters.AssignedMechanicId.HasValue)
+                query = query.Where(j => j.AssignedMechanicId == parameters.AssignedMechanicId.Value);
+
+            if (parameters.Unassigned == true)
+                query = query.Where(j => j.AssignedMechanicId == null);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var items = await query
+                .OrderByDescending(j => j.Priority)
+                .ThenBy(j => j.DateOpened)
+                .ThenBy(j => j.Id)
+                .Skip(parameters.Skip)
+                .Take(parameters.PageSize)
+                .Select(j => new JobCardListDto
+                {
+                    Id = j.Id,
+                    JobCardNumber = j.JobCardNumber,
+                    Status = j.Status,
+                    Priority = j.Priority,
+                    DateOpened = j.DateOpened,
+                    DateCompleted = j.DateCompleted,
+                    VehicleFleetNumber = j.Incident.Vehicle.FleetNumber,
+                    IncidentType = j.Incident.IncidentType,
+                    AssignedSupervisorName = j.AssignedSupervisor == null
+                        ? null
+                        : j.AssignedSupervisor.Name + " " + j.AssignedSupervisor.Surname,
+                    AssignedMechanicName = j.AssignedMechanic == null
+                        ? null
+                        : j.AssignedMechanic.Name + " " + j.AssignedMechanic.Surname
+                })
+                .ToListAsync(cancellationToken);
+
+            return new PagedResult<JobCardListDto>
+            {
+                Items = items,
+                Page = parameters.Page,
+                PageSize = parameters.PageSize,
+                TotalCount = totalCount
+            };
         }
 
         public async Task<ServiceResult<JobCardDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -204,6 +263,94 @@ namespace DriveOp.Api.Services.JobCards
                 throw;
             }
         }
+
+        public async Task<ServiceResult<bool>> UpdateAsync(Guid id, UpdateJobCardDto dto, CancellationToken cancellationToken)
+        {
+            if (!Enum.IsDefined(dto.Priority))
+                return ServiceResult<bool>.Validation(
+                    $"'{(int)dto.Priority}' is not a valid priority.");
+
+            var jobCard = await _context.JobCards
+                .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+            if (jobCard is null)
+                return ServiceResult<bool>.NotFound($"Job card {id} was not found.");
+
+            if (IsTerminal(jobCard.Status) && jobCard.Priority != dto.Priority)
+                return ServiceResult<bool>.Conflict(
+                    $"Priority cannot be changed on a {jobCard.Status} job card. " +
+                    "Notes can still be uploaded.");
+
+            jobCard.Priority = dto.Priority;
+
+            if (dto.Notes is not null)
+                jobCard.Notes = dto.Notes;
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return ServiceResult<bool>.Conflict(
+                    "This job card was changed by someone else. Reload and try again.");
+            }
+
+            return ServiceResult<bool>.Success(true);
+        }
+
+        public async Task<ServiceResult<JobCardDto>> AssignAsync(Guid id, AssignJobCardDto dto, CancellationToken cancellationToken)
+        {
+            var jobCard = await _context.JobCards
+                .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+            if (jobCard is null)
+                return ServiceResult<JobCardDto>.NotFound($"Job card {id} was not found.");
+
+            if (IsTerminal(jobCard.Status))
+                return ServiceResult<JobCardDto>.Conflict(
+                    $"A {jobCard.Status} job card cannot be reassigned.");
+
+            if (dto.AssignedSupervisorId.HasValue)
+            {
+                var supervisorIsValid = await _context.Supervisors
+                    .AnyAsync(s => s.Id == dto.AssignedSupervisorId.Value
+                                && s.MunicipalityId == jobCard.MunicipalityId, cancellationToken);
+
+                if (!supervisorIsValid)
+                    return ServiceResult<JobCardDto>.Validation(
+                        "The assigned supervisor must belong to the job card's municipality.");
+            }
+
+            if (dto.AssignedMechanicId.HasValue)
+            {
+                var mechanicIsValid = await _context.Mechanics
+                    .AnyAsync(m => m.Id == dto.AssignedMechanicId.Value
+                                && m.MunicipalityId == jobCard.MunicipalityId, cancellationToken);
+
+                if (!mechanicIsValid)
+                    return ServiceResult<JobCardDto>.Validation(
+                        "The assigned mechanic must belong to the job card's municipality.");
+            }
+
+            jobCard.AssignedSupervisorId = dto.AssignedSupervisorId;
+            jobCard.AssignedMechanicId = dto.AssignedMechanicId;
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return ServiceResult<JobCardDto>.Conflict(
+                    "This job card was changed by someone else. Reload and try again.");
+            }
+
+            return await GetByIdAsync(id, cancellationToken);
+        }
+
+        private static bool IsTerminal(JobCardStatus status) =>
+            status is JobCardStatus.Completed or JobCardStatus.Cancelled;
 
         private async Task<string> GenerateJobCardNumberAsync(Guid municipalityId, CancellationToken cancellationToken)
         {
