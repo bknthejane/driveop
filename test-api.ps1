@@ -183,12 +183,19 @@ function Invoke-Sql {
     return sqlcmd -S $SqlServer -d $Database -I -h -1 -W -w 400 -Q $Query
 }
 
-function Get-SqlIds {
-    param([string]$Query)
-    $out = Invoke-Sql $Query
-    return @($out |
+# Parsing is deliberately separate from execution. A helper that did both
+# could not be applied twice to the same batch, and calling it on a query
+# already run would execute the INSERT a second time.
+function Select-GuidLines {
+    param($Output)
+    return @($Output |
         ForEach-Object { $_.Trim() } |
         Where-Object { $_ -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' })
+}
+
+function Get-SqlIds {
+    param([string]$Query)
+    return Select-GuidLines (Invoke-Sql $Query)
 }
 
 # Enums may serialise as names or ints depending on converter config.
@@ -219,8 +226,10 @@ $municipalityInsert = "SET NOCOUNT ON; " +
     "(NEWID(), 'Test Municipality B $stamp', '$codeB', 'Gauteng', GETUTCDATE(), 0); " +
     "SELECT CONVERT(varchar(36), Id) FROM Municipalities WHERE Code IN ('$codeA','$codeB') ORDER BY Code;"
 
+# Run once, parse the captured output. Running the batch twice would violate
+# the unique index on Code and print a duplicate-key error.
 $municipalityOutput = Invoke-Sql $municipalityInsert
-$ids = Get-SqlIds $municipalityInsert
+$ids = Select-GuidLines $municipalityOutput
 
 if ($ids.Count -lt 2) {
     Stop-Setup "Could not create municipalities." $municipalityOutput
@@ -442,9 +451,7 @@ $staffInsert = "SET NOCOUNT ON; " +
     "SELECT CONVERT(varchar(36), @mechB);"
 
 $staffOutput = Invoke-Sql $staffInsert
-$staffIds = @($staffOutput |
-    ForEach-Object { $_.Trim() } |
-    Where-Object { $_ -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' })
+$staffIds = Select-GuidLines $staffOutput
 
 if ($staffIds.Count -lt 4) {
     Stop-Setup "Could not create supervisors and mechanics (got $($staffIds.Count) of 4 ids)." $staffOutput
