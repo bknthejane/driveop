@@ -13,5 +13,6 @@ namespace DriveOp.Api.Entities
         public ICollection<Supervisor> Supervisors { get; set; } = new List<Supervisor>();
         public ICollection<Mechanic> Mechanics { get; set; } = new List<Mechanic>();
         public ICollection<JobCard> JobCards { get; set; } = new List<JobCard>();
+        public ICollection<NumberSequence> NumberSequences { get; set; } = new List<NumberSequence>();
     }
 }
