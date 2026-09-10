@@ -1,5 +1,6 @@
 using DriveOp.Api.Common;
 using DriveOp.Api.Data;
+using DriveOp.Api.Services.Common;
 using DriveOp.Api.Services.Drivers;
 using DriveOp.Api.Services.Incidents;
 using DriveOp.Api.Services.JobCards;
@@ -35,6 +36,7 @@ builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<IJobCardService, JobCardService>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddScoped<INumberSequenceService, NumberSequenceService>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();

@@ -4,6 +4,7 @@ using DriveOp.Api.DTOs.Common;
 using DriveOp.Api.DTOs.JobCards;
 using DriveOp.Api.Entities;
 using DriveOp.Api.Entities.Enums;
+using DriveOp.Api.Services.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace DriveOp.Api.Services.JobCards
@@ -11,10 +12,12 @@ namespace DriveOp.Api.Services.JobCards
     public class JobCardService : IJobCardService
     {
         private readonly DriveOpDbContext _context;
+        private readonly INumberSequenceService _sequences;
 
-        public JobCardService(DriveOpDbContext context)
+        public JobCardService(DriveOpDbContext context, INumberSequenceService sequences)
         {
             _context = context;
+            _sequences = sequences;
         }
 
         public async Task<PagedResult<JobCardListDto>> GetAllAsync(JobCardQueryParameters parameters, CancellationToken cancellationToken)
@@ -354,24 +357,12 @@ namespace DriveOp.Api.Services.JobCards
 
         private async Task<string> GenerateJobCardNumberAsync(Guid municipalityId, CancellationToken cancellationToken)
         {
-            var prefix = $"JC-{DateTime.UtcNow:yyyyMMdd}-";
+            var periodKey = DateTime.UtcNow.ToString("yyyyMMdd");
 
-            var lastNumber = await _context.JobCards
-                .IgnoreQueryFilters()
-                .Where(j => j.MunicipalityId == municipalityId
-                         && j.JobCardNumber.StartsWith(prefix))
-                .OrderByDescending(j => j.JobCardNumber)
-                .Select(j => j.JobCardNumber)
-                .FirstOrDefaultAsync(cancellationToken);
+            var next = await _sequences.NextAsync(
+                municipalityId, SequenceNames.JobCard, periodKey, cancellationToken);
 
-            var next = 1;
-
-            if (lastNumber is not null && int.TryParse(lastNumber.Substring(prefix.Length), out var parsed))
-            {
-                next = parsed + 1;
-            }
-
-            return $"{prefix}{next:D3}";
+            return $"JC-{periodKey}-{next:D3}";
         }
     }
 }

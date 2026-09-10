@@ -18,6 +18,7 @@ namespace DriveOp.Api.Data
         public DbSet<Mechanic> Mechanics => Set<Mechanic>();
         public DbSet<Incident> Incidents => Set<Incident>();
         public DbSet<JobCard> JobCards => Set<JobCard>();
+        public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
