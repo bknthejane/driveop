@@ -6,7 +6,11 @@ namespace DriveOp.Api.DTOs.Incidents
     {
         public Guid Id { get; set; }
         public string Description { get; set; } = null!;
-        public IncidentType IncidentType { get; set; }
+        public Guid WorkTypeId { get; set; }
+        public string WorkTypeName { get; set; } = null!;
+
+        public Guid DepartmentId { get; set; }
+        public string DepartmentName { get; set; } = null!;
         public IncidentStatus Status { get; set; }
         public DateTime DateReported { get; set; }
 

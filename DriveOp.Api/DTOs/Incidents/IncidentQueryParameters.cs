@@ -9,6 +9,7 @@ namespace DriveOp.Api.DTOs.Incidents
         public Guid? DriverId { get; set; }
         public Guid? MunicipalityId { get; set; }
         public IncidentStatus? Status { get; set; }
-        public IncidentType? IncidentType { get; set; }
+        public Guid? WorkTypeId { get; set; }
+        public Guid? DepartmentId { get; set; }
     }
 }

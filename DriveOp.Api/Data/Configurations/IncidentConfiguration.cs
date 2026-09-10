@@ -12,6 +12,16 @@ namespace DriveOp.Api.Data.Configurations
 
             builder.Property(i => i.Description).IsRequired().HasMaxLength(4000);
 
+            builder.HasOne(i => i.WorkType)
+                .WithMany(w => w.Incidents)
+                .HasForeignKey(i => i.WorkTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(i => i.Department)
+                .WithMany()
+                .HasForeignKey(i => i.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.HasOne(i => i.Vehicle)
                 .WithMany(v => v.Incidents)
                 .HasForeignKey(i => i.VehicleId)
