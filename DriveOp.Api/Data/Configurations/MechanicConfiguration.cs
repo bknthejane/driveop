@@ -18,6 +18,11 @@ namespace DriveOp.Api.Data.Configurations
                 .HasForeignKey(m => m.MunicipalityId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            builder.HasOne(m => m.Department)
+                .WithMany(d => d.Mechanics)
+                .HasForeignKey(m => m.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.HasOne(m => m.Supervisor)
                 .WithMany(s => s.Mechanics)
                 .HasForeignKey(m => m.SupervisorId)

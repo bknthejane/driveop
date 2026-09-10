@@ -59,7 +59,7 @@ namespace DriveOp.Api.Services.JobCards
                     DateOpened = j.DateOpened,
                     DateCompleted = j.DateCompleted,
                     VehicleFleetNumber = j.Incident.Vehicle.FleetNumber,
-                    IncidentType = j.Incident.IncidentType,
+                    WorkTypeName = j.Incident.WorkType.Name,
                     AssignedSupervisorName = j.AssignedSupervisor == null
                         ? null
                         : j.AssignedSupervisor.Name + " " + j.AssignedSupervisor.Surname,

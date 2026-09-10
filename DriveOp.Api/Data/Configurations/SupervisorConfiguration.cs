@@ -19,6 +19,15 @@ namespace DriveOp.Api.Data.Configurations
                 .HasForeignKey(s => s.MunicipalityId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            builder.HasOne(s => s.Department)
+                .WithOne(d => d.Supervisor)
+                .HasForeignKey<Supervisor>(s => s.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasIndex(s => s.DepartmentId)
+                .IsUnique()
+                .HasFilter("[IsDeleted] = 0");
+
             builder.HasQueryFilter(s => !s.IsDeleted);
         }
     }

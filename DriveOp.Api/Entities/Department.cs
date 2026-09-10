@@ -2,19 +2,17 @@
 
 namespace DriveOp.Api.Entities
 {
-    public class Supervisor : BaseEntity
+    public class Department : BaseEntity
     {
         public string Name { get; set; } = null!;
-        public string Surname { get; set; } = null!;
-        public string Email { get; set; } = null!;
+        public string? Description { get; set; }
 
         public Guid MunicipalityId { get; set; }
         public Municipality Municipality { get; set; } = null!;
 
-        public Guid DepartmentId { get; set; }
-        public Department Department { get; set; } = null!;
+        public Supervisor? Supervisor { get; set; }
 
+        public ICollection<WorkType> WorkTypes { get; set; } = new List<WorkType>();
         public ICollection<Mechanic> Mechanics { get; set; } = new List<Mechanic>();
-        public ICollection<JobCard> JobCards { get; set; } = new List<JobCard>();
     }
 }

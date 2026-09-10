@@ -12,7 +12,7 @@ namespace DriveOp.Api.DTOs.JobCards
         public DateTime? DateCompleted { get; set; }
 
         public string VehicleFleetNumber { get; set; } = null!;
-        public IncidentType IncidentType { get; set; }
+        public string WorkTypeName { get; set; } = null!;
 
         public string? AssignedSupervisorName { get; set; }
         public string? AssignedMechanicName { get; set; }

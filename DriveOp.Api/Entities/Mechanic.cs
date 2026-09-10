@@ -10,6 +10,9 @@ namespace DriveOp.Api.Entities
         public Guid MunicipalityId { get; set; }
         public Municipality Municipality { get; set; } = null!;
 
+        public Guid DepartmentId { get; set; }
+        public Department Department { get; set; } = null!;
+
         public Guid? SupervisorId { get; set; }
         public Supervisor? Supervisor { get; set; }
 

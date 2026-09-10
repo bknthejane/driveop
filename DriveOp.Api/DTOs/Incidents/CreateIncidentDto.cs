@@ -9,7 +9,7 @@ namespace DriveOp.Api.DTOs.Incidents
         public string Description { get; set; } = null!;
 
         [Required]
-        public IncidentType IncidentType { get; set; }
+        public Guid WorkTypeId { get; set; }
 
         [Required]
         public Guid VehicleId { get; set; }

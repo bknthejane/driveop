@@ -33,8 +33,11 @@ namespace DriveOp.Api.Services.Incidents
             if (parameters.Status.HasValue)
                 query = query.Where(i => i.Status == parameters.Status.Value);
 
-            if (parameters.IncidentType.HasValue)
-                query = query.Where(i => i.IncidentType == parameters.IncidentType.Value);
+            if (parameters.WorkTypeId.HasValue)
+                query = query.Where(i => i.WorkTypeId == parameters.WorkTypeId.Value);
+
+            if (parameters.DepartmentId.HasValue)
+                query = query.Where(i => i.DepartmentId == parameters.DepartmentId.Value);
 
             var totalCount = await query.CountAsync(cancellationToken);
 
@@ -46,7 +49,8 @@ namespace DriveOp.Api.Services.Incidents
                 .Select(i => new IncidentListDto
                 {
                     Id = i.Id,
-                    IncidentType = i.IncidentType,
+                    WorkTypeName = i.WorkType.Name,
+                    DepartmentName = i.Department.Name,
                     Status = i.Status,
                     DateReported = i.DateReported,
                     VehicleFleetNumber = i.Vehicle.FleetNumber,
@@ -73,7 +77,10 @@ namespace DriveOp.Api.Services.Incidents
                 {
                     Id = i.Id,
                     Description = i.Description,
-                    IncidentType = i.IncidentType,
+                    WorkTypeId = i.WorkTypeId,
+                    WorkTypeName = i.WorkType.Name,
+                    DepartmentId = i.DepartmentId,
+                    DepartmentName = i.Department.Name,
                     Status = i.Status,
                     DateReported = i.DateReported,
                     VehicleId = i.VehicleId,
@@ -96,9 +103,14 @@ namespace DriveOp.Api.Services.Incidents
 
         public async Task<ServiceResult<IncidentDto>> CreateAsync(CreateIncidentDto dto, CancellationToken cancellationToken)
         {
-            if (!Enum.IsDefined(dto.IncidentType))
-                return ServiceResult<IncidentDto>.Validation(
-                    $"'{(int)dto.IncidentType}' is not a valid incident type.");
+            var workType = await _context.WorkTypes
+                .AsNoTracking()
+                .Where(w => w.Id == dto.WorkTypeId)
+                .Select(w => new { w.Id, w.MunicipalityId, w.DepartmentId })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (workType is null)
+                return ServiceResult<IncidentDto>.Validation($"Work type {dto.WorkTypeId} was not found.");
 
             var vehicle = await _context.Vehicles
                  .AsNoTracking()
@@ -126,11 +138,16 @@ namespace DriveOp.Api.Services.Incidents
                 return ServiceResult<IncidentDto>.Validation(
                     "An incident cannot be logged against a decommissioned vehicle.");
 
+            if (workType.MunicipalityId != vehicle.MunicipalityId)
+                return ServiceResult<IncidentDto>.Validation(
+                    "The work type must belong to the same municipality as the vehicle.");
+
             var incident = new Incident
             {
                 Id = Guid.NewGuid(),
                 Description = dto.Description,
-                IncidentType = dto.IncidentType,
+                WorkTypeId = workType.Id,
+                DepartmentId = workType.DepartmentId,
                 Status = IncidentStatus.Reported,
                 DateReported = DateTime.UtcNow,
                 VehicleId = dto.VehicleId,
