@@ -438,6 +438,22 @@ $incidentFilter = "/api/incidents?vehicleId=" + $vehicleAId + "&pageSize=5"
 $filtered = Invoke-Api -Method GET -Path $incidentFilter
 Assert-Status "filter incidents by vehicle" 200 $filtered.Status $filtered.Body
 
+# An incident with no job card can be deleted, and the row survives.
+$disposableIncident = Invoke-Api -Method POST -Path "/api/incidents" -Body @{
+    description  = "Logged in error, no job card will be raised."
+    incidentType = 5
+    vehicleId    = $vehicleAId
+    driverId     = $driverAId
+}
+Assert-Status "log an incident to delete" 201 $disposableIncident.Status $disposableIncident.Body
+$disposableIncidentId = $disposableIncident.Body.id
+
+$deleteDisposable = Invoke-Api -Method DELETE -Path "/api/incidents/$disposableIncidentId"
+Assert-Status "incident without a job card can be deleted" 204 $deleteDisposable.Status $deleteDisposable.Body
+
+$disposableGone = Invoke-Api -Method GET -Path "/api/incidents/$disposableIncidentId"
+Assert-Status "deleted incident hidden by query filter" 404 $disposableGone.Status $disposableGone.Body
+
 # ---------------------------------------------------------------- job cards
 
 Write-Section "JobCard generation and the transaction"
@@ -526,8 +542,29 @@ Assert-True "job card number restarts at $expectedFirst for B" `
 $missingJobCard = Invoke-Api -Method GET -Path ("/api/jobcards/" + (NewId))
 Assert-Status "unknown job card id" 404 $missingJobCard.Status $missingJobCard.Body
 
+# ---- Issue #35: soft delete coordination between Incident and JobCard ----
+#
+# Restrict does not block a soft delete, because IsDeleted is an UPDATE and
+# the foreign key never fires. JobCard.Incident is a REQUIRED navigation, so
+# EF Core uses an INNER JOIN for Include — a soft-deleted Incident would make
+# its active JobCard disappear from query results entirely, which is worse
+# than a null reference.
+#
+# The service guards against it. These assertions prove both halves: the
+# delete is refused, AND the job card is still reachable afterwards.
+
 $blockedIncident = Invoke-Api -Method DELETE -Path "/api/incidents/$incidentAId"
 Assert-Status "incident with a job card cannot be deleted" 409 $blockedIncident.Status $blockedIncident.Body
+
+$jobCardSurvives = Invoke-Api -Method GET -Path "/api/jobcards/$jobCardAId"
+Assert-Status "job card still reachable after the refused incident delete" 200 $jobCardSurvives.Status $jobCardSurvives.Body
+
+Assert-True "job card still resolves its incident" `
+    (-not [string]::IsNullOrWhiteSpace($jobCardSurvives.Body.incidentDescription)) `
+    "incidentDescription was '$($jobCardSurvives.Body.incidentDescription)'"
+
+$incidentSurvives = Invoke-Api -Method GET -Path "/api/incidents/$incidentAId"
+Assert-Status "incident still reachable after the refused delete" 200 $incidentSurvives.Status $incidentSurvives.Body
 
 # ---------------------------------------------------------------- lifecycle
 
@@ -646,6 +683,13 @@ $reviveCancelled = Invoke-Api -Method PUT -Path "/api/jobcards/$jobCardA2Id/stat
     status = 2
 }
 Assert-Status "Cancelled is terminal" 409 $reviveCancelled.Status $reviveCancelled.Body
+
+# A cancelled job card is still history, so it still blocks the delete.
+$blockedByCancelled = Invoke-Api -Method DELETE -Path "/api/incidents/$incidentA2Id"
+Assert-Status "incident with a cancelled job card cannot be deleted" 409 $blockedByCancelled.Status $blockedByCancelled.Body
+
+$cancelledSurvives = Invoke-Api -Method GET -Path "/api/jobcards/$jobCardA2Id"
+Assert-Status "cancelled job card still reachable" 200 $cancelledSurvives.Status $cancelledSurvives.Body
 
 # ---------------------------------------------------------------- jobcard crud
 
